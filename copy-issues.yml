@@ -1,0 +1,72 @@
+name: Copy Issues Between Repositories
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_owner:
+        description: 'Source Repository Owner (username or organization)'
+        required: true
+        type: string
+      source_repo:
+        description: 'Source Repository Name'
+        required: true
+        type: string
+      issue_number:
+        description: 'Issue Number to Copy'
+        required: true
+        type: number
+      target_owner:
+        description: 'Target Repository Owner'
+        required: true
+        type: string
+      target_repo:
+        description: 'Target Repository Name'
+        required: true
+        type: string
+
+jobs:
+  copy-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Copy Issue via GitHub Script
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.CUSTOM_PAT || secrets.GITHUB_TOKEN }}
+          script: |
+            const sourceOwner = context.payload.inputs.source_owner;
+            const sourceRepo = context.payload.inputs.source_repo;
+            const issueNumber = parseInt(context.payload.inputs.issue_number, 10);
+            const targetOwner = context.payload.inputs.target_owner;
+            const targetRepo = context.payload.inputs.target_repo;
+
+            console.log(`Fetching issue #${issueNumber} from ${sourceOwner}/${sourceRepo}...`);
+
+            // 1. Fetch the source issue
+            const { data: issue } = await github.rest.issues.get({
+              owner: sourceOwner,
+              repo: sourceRepo,
+              issue_number: issueNumber,
+            });
+
+            // Optional: Append a note referencing the original issue
+            const originalLink = `\n\n*Migrated from [${sourceOwner}/${sourceRepo}#${issueNumber}](${issue.html_url})*`;
+            const newBody = (issue.body || '') + originalLink;
+
+            // Extract label names if present
+            const labels = issue.labels.map(label => typeof label === 'string' ? label : label.name);
+
+            console.log(`Creating new issue in ${targetOwner}/${targetRepo}...`);
+
+            // 2. Create the issue in the target repository
+            const { data: newIssue } = await github.rest.issues.create({
+              owner: targetOwner,
+              repo: targetRepo,
+              title: issue.title,
+              body: newBody,
+              labels: labels,
+            });
+
+            console.log(`Successfully created issue! View it here: ${newIssue.html_url}`);
